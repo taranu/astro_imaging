@@ -1,10 +1,11 @@
 from astropy.io import fits
 from astropy.visualization import make_lupton_rgb
-import config
+import astro_imaging.config as config
 import imageio
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from typing import Callable
 
 
 def func_path_default(source, band, paths: config.Paths = None, postfix=None):
@@ -30,12 +31,12 @@ def func_path_default(source, band, paths: config.Paths = None, postfix=None):
         paths = config.paths_default
     if postfix is None:
         postfix = ".fits"
-    return os.path.join(paths.images, f'{source}{band}{postfix}')
+    return os.path.join(paths.images, f'{source}_{band}{postfix}')
 
 
 def make_img_rgb(
-        source, bands_weights, func_path=None, write=False, kwargs_make_rgb=None, plot=False,
-        return_imgs=False, return_imgs_fits=False, format_img=None, midfix=None, **kwargs,
+        source, bands_weights, images=None, func_path=None, hdu_image=1, write=False, kwargs_make_rgb=None,
+        plot=False, return_imgs=False, return_imgs_fits=False, format_img=None, midfix=None, **kwargs,
 ):
     """ Make an RGB image with arbitrary color balance.
 
@@ -45,8 +46,13 @@ def make_img_rgb(
         A source ID or name.
     bands_weights : `dict` [`str`, `float`]
         A dict of weights per band name.
+    images : `dict`
+        A dict of images keyed by band. Default None loads from file using func_path instead.
+        Assumed to be FITS HDUs if `hdu_image` is not None or arrays otherwise.
     func_path : function
         A function that returns a path for a source in a given band.
+    hdu_image : `int`
+        The index of the image HDU, if `images` is None or an already-read FITS.
     write : `bool`
         Whether to write the file to disk.
     kwargs_make_rgb : `dict`
@@ -68,12 +74,23 @@ def make_img_rgb(
 
     Returns
     -------
-    img_rgb
+    img_rgb : `numpy.array`
+        RGB image of the source.
+    images : `dict` [`numpy.array`]
+        Dict by band of the re-weighted images.
+    images_fits : `dict` [`numpy.array`]
+        Dict by band of the original images.
     """
     if not hasattr(bands_weights, 'items'):
         bands_weights = {key: 1. for key in bands_weights}
-    if func_path is None:
-        func_path = func_path_default
+    if images is None:
+        read_images = True
+        images = {}
+    elif func_path is not None:
+        raise ValueError("Can't specify both func_path and images")
+    else:
+        read_images = False
+        images = {k: v for k, v in images.items()}
     if kwargs_make_rgb is None:
         kwargs_make_rgb = {}
     if format_img is None:
@@ -81,16 +98,17 @@ def make_img_rgb(
     if midfix is None:
         midfix = f"_{''.join(bands_weights)}_"
 
-    imgs = {}
-    imgs_fits = {}
+    images_fits = {}
     name_source = f'{source}'
     for band, weight in bands_weights.items():
-        img_fits = fits.open(f'{func_path(name_source, band, **kwargs)}')
+        img_fits = read_image(name_source, band, func_path, **kwargs) if read_images else images[band]
         if return_imgs_fits:
-            imgs_fits[band] = img_fits
-        imgs[band] = weight*img_fits[1].data
+            images_fits[band] = img_fits
+        if hdu_image is not None:
+            img_fits = img_fits[hdu_image].data
+        images[band] = weight*img_fits
 
-    img_rgb = make_lupton_rgb(*list(imgs.values()), **kwargs_make_rgb)
+    img_rgb = make_lupton_rgb(*list(images.values()), **kwargs_make_rgb)
     if write:
         imageio.imwrite(
             os.path.join(
@@ -103,5 +121,12 @@ def make_img_rgb(
     if plot:
         plt.imshow(img_rgb)
     if return_imgs:
-        return img_rgb, imgs, imgs_fits if return_imgs_fits else None
+        return img_rgb, images, images_fits if return_imgs_fits else None
     return img_rgb
+
+
+def read_image(name_source: str, band: str, func_path: Callable = None, **kwargs):
+    if func_path is None:
+        func_path = func_path_default()
+    img_fits = fits.open(f'{func_path(name_source, band, **kwargs)}')
+    return img_fits

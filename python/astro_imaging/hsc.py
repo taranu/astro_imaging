@@ -7,48 +7,50 @@ paths_cutout = {
     'pdr1': 'https://hsc-release.mtk.nao.ac.jp/das_cutout/s16a/cgi-bin/cutout?',
     's16a': 'https://hsc-release.mtk.nao.ac.jp/das_cutout/s16a/cgi-bin/cutout?',
     'pdr2': 'https://hsc-release.mtk.nao.ac.jp/das_cutout/pdr2/cgi-bin/cutout?',
+    'pdr3': 'https://hsc-release.mtk.nao.ac.jp/das_cutout/pdr3/cgi-bin/cutout?',
 }
 paths_psf = {
     'pdr1': 'https://hsc-release.mtk.nao.ac.jp/psf/s16a/cgi/getpsf?',
     's16a': 'https://hsc-release.mtk.nao.ac.jp/psf/s16a/cgi/getpsf?',
     'pdr2': 'https://hsc-release.mtk.nao.ac.jp/psf/pdr2/cgi/getpsf?',
+    'pdr3': 'https://hsc-release.mtk.nao.ac.jp/psf/pdr3/cgi/getpsf?',
 }
-release_default = 'pdr2'
+release_default = 'pdr3'
+scale_pixel = 0.168
 
 
-def get_bands_weights_default():
+def get_bands_weights_default(keys_band=True):
     # See http://mips.as.arizona.edu/~cnaw/sun.html
     # grizy AB abs. mags: 5.07, 4.64, 4.52, 4.50, 4.50
     # x = 1/10**(-0.4*(np.array([5.07, 4.64, 4.52, 4.50, 4.50])-4.5)) = [1.69044093, 1.13762729, 1.01859139, 1., 1.])
     # x/np.mean(x) = [1.44564678, 0.97288654, 0.87108833, 0.85518917, 0.85518917]
+    values = [1.44564678, 0.97288654, 0.87108833, 0.85518917, 0.85518917]
     return {
-        'HSC-G': 1.44564678,
-        'HSC-R': 0.97288654,
-        'HSC-I': 0.87108833,
-        'HSC-Z': 0.85518917,
-        'HSC-Y': 0.85518917,
+        band if keys_band else f'HSC-{band.upper()}': value
+        for band, value in zip('grizy', values)
     }
 
 
-def get_defaults(band=None, type_img=None, rerun=None, release=None):
+def get_defaults(band=None, type_img=None, rerun=None, release=None, psf=False):
     if type_img is None:
         type_img = 'coadd'
     if band is None:
         band = 'HSC-R'
-    if rerun is None:
-        rerun = 'any'
     if release is None:
         release = release_default
+    if rerun is None:
+        rerun = f'{release}_wide' if psf else 'any'
     return band, type_img, rerun, release
 
 
 def write_request(path_request, args, filename):
     request = '&'.join((f'{key}={value}' for key, value in args.items()))
     request = f'{path_request}{request}'
-    rv = requests.get(request, stream=True)
+    download = requests.get(request, stream=True)
     with open(filename, 'wb') as f:
-        for chunk in rv:
+        for chunk in download:
             f.write(chunk)
+    return request
 
 
 def download_cutout(
@@ -80,13 +82,14 @@ def download_cutout(
         'rerun': rerun,
     }
 
-    write_request(path_request=path_cutout, args=args, filename=filename)
+    request = write_request(path_request=path_cutout, args=args, filename=filename)
+    return request
 
 
 def download_psf(
-        filename, ra, dec, type_img=None, centered=True, band=None, rerun=None, release=None, path_psf=None,
+        ra, dec, filename, type_img=None, centered=True, band=None, rerun=None, release=None, path_psf=None,
 ):
-    band, type_img, rerun, release = get_defaults(band=band, type_img=type_img, rerun=rerun, release=release)
+    band, type_img, rerun, release = get_defaults(band=band, type_img=type_img, rerun=rerun, release=release, psf=True)
     if path_psf is None:
         path_psf = paths_psf[release]
 
@@ -99,7 +102,8 @@ def download_psf(
         'rerun': rerun,
     }
 
-    write_request(path_request=path_psf, args=args, filename=filename)
+    request = write_request(path_request=path_psf, args=args, filename=filename)
+    return request
 
 
 def download_sources(
@@ -121,9 +125,9 @@ def download_sources(
             filename = f'{src}{midfix}{band}'
             if cutout:
                 download_cutout(
-                    os.path.join(source, f'{filename}.fits'), ra=ra, dec=dec, band=band, **kwargs_cutout
+                    ra=ra, dec=dec, filename=os.path.join(source, f'{filename}.fits'), band=band, **kwargs_cutout
                 )
             if psf:
                 download_psf(
-                    os.path.join(source, f'{filename}-psf.fits'), ra=ra, dec=dec, band=band, **kwargs_psf
+                    ra=ra, dec=dec, filename=os.path.join(source, f'{filename}-psf.fits'), band=band, **kwargs_psf
                 )
