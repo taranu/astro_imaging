@@ -8,12 +8,12 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.7"
-astropy = "^3"
-numpy = "^1.19.0"
-requests = "^2"
-imageio = "^2"
-matplotlib = "^3"
+python = ">=3.5"
+astropy = ">=2"
+numpy = ">=1"
+requests = ">=1"
+imageio = ">=1"
+matplotlib = ">=1"
 
 [tool.poetry.dev-dependencies]
 
