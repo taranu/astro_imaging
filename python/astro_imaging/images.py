@@ -127,6 +127,6 @@ def make_img_rgb(
 
 def read_image(name_source: str, band: str, func_path: Callable = None, **kwargs):
     if func_path is None:
-        func_path = func_path_default()
+        func_path = func_path_default
     img_fits = fits.open(f'{func_path(name_source, band, **kwargs)}')
     return img_fits
